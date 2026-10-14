@@ -1,0 +1,9 @@
+build/
+build-*/
+dist/
+sdk/
+*.zip
+*.AppImage
+.vscode/
+.idea/
+*.user

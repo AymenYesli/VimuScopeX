@@ -1,0 +1,20 @@
+# Vimu MSO USB oscilloscope — non-root access
+#
+# Install:
+#   1. Plug the scope in and run:  lsusb
+#      Find the line for the scope; it looks like
+#          Bus 001 Device 007: ID 1234:5678 Vimu ...
+#      The two hex values are idVendor:idProduct.
+#   2. Replace VVVV and PPPP below with those values (lower case).
+#   3. sudo install -m 644 scripts/99-vimu.rules /etc/udev/rules.d/99-vimu.rules
+#   4. sudo udevadm control --reload-rules && sudo udevadm trigger
+#   5. Unplug and replug the scope.
+#
+# TAG+="uaccess" is what grants the locally logged-in user access on Arch.
+# There is no plugdev group on Arch by default, so do not use one.
+
+SUBSYSTEM=="usb", ATTR{idVendor}=="VVVV", ATTR{idProduct}=="PPPP", MODE="0660", TAG+="uaccess"
+
+# If the firmware re-enumerates with a different product ID after loading,
+# a vendor-only rule covers both states:
+# SUBSYSTEM=="usb", ATTR{idVendor}=="VVVV", MODE="0660", TAG+="uaccess"

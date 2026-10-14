@@ -1,0 +1,65 @@
+<RCC>
+    <qresource prefix="/images">
+        <file alias="splash.png">app/splash.png</file>
+        <file alias="app-icon-16.png">app/app-icon-16.png</file>
+        <file alias="app-icon-32.png">app/app-icon-32.png</file>
+        <file alias="app-icon-48.png">app/app-icon-48.png</file>
+        <file alias="app-icon-64.png">app/app-icon-64.png</file>
+        <file alias="app-icon-128.png">app/app-icon-128.png</file>
+        <file alias="app-icon-256.png">app/app-icon-256.png</file>
+        <file alias="app-icon-512.png">app/app-icon-512.png</file>
+        <file alias="logo-dark.png">logo-dark.png</file>
+        <file alias="logo-light.png">logo-light.png</file>
+    </qresource>
+    <qresource prefix="/fonts">
+        <file alias="fontawesome-solid.otf">fonts/fontawesome-solid.otf</file>
+        <file alias="GoogleSans-Regular.ttf">fonts/GoogleSans-Regular.ttf</file>
+        <file alias="GoogleSans-Medium.ttf">fonts/GoogleSans-Medium.ttf</file>
+        <file alias="GoogleSans-Bold.ttf">fonts/GoogleSans-Bold.ttf</file>
+    </qresource>
+    <qresource prefix="/media">
+        <file alias="logo.mp4">app/logo.mp4</file>
+        <file alias="plugged_in.wav">sounds/plugged_in.wav</file>
+        <file alias="plugged_out.wav">sounds/plugged_out.wav</file>
+    </qresource>
+    <qresource prefix="/remote">
+        <file alias="index.html">remote/index.html</file>
+    </qresource>
+    <qresource prefix="/icons">
+        <file alias="arrow-up.png">icons/arrow-up.png</file>
+        <file alias="arrow-down.png">icons/arrow-down.png</file>
+        <file alias="MinusSign.svg">icons/MinusSign.svg</file>
+        <file alias="PlusSign.svg">icons/PlusSign.svg</file>
+        <file alias="Add.svg">icons/Add.svg</file>
+        <file alias="Annotations.svg">icons/Annotations.svg</file>
+        <file alias="Automotive.svg">icons/Automotive.svg</file>
+        <file alias="Close.svg">icons/Close.svg</file>
+        <file alias="Color.svg">icons/Color.svg</file>
+        <file alias="Decode.svg">icons/Decode.svg</file>
+        <file alias="Default.svg">icons/Default.svg</file>
+        <file alias="Edit.svg">icons/Edit.svg</file>
+        <file alias="FFT.svg">icons/FFT.svg</file>
+        <file alias="Force.svg">icons/Force.svg</file>
+        <file alias="Freeze.svg">icons/Freeze.svg</file>
+        <file alias="Full.svg">icons/Full.svg</file>
+        <file alias="Instruments.svg">icons/Instruments.svg</file>
+        <file alias="Math.svg">icons/Math.svg</file>
+        <file alias="Measurements.svg">icons/Measurements.svg</file>
+        <file alias="Move.svg">icons/Move.svg</file>
+        <file alias="Open.svg">icons/Open.svg</file>
+        <file alias="Persistence.svg">icons/Persistence.svg</file>
+        <file alias="Reference.svg">icons/Reference.svg</file>
+        <file alias="Remote.svg">icons/Remote.svg</file>
+        <file alias="Rulers.svg">icons/Rulers.svg</file>
+        <file alias="Save.svg">icons/Save.svg</file>
+        <file alias="Scope.svg">icons/Scope.svg</file>
+        <file alias="Settings.svg">icons/Settings.svg</file>
+        <file alias="Single.svg">icons/Single.svg</file>
+        <file alias="Trash.svg">icons/Trash.svg</file>
+        <file alias="Wrench.svg">icons/Wrench.svg</file>
+        <file alias="XY.svg">icons/XY.svg</file>
+        <file alias="Zoom.svg">icons/Zoom.svg</file>
+        <file alias="ZoomLevelBackward.svg">icons/ZoomLevelBackward.svg</file>
+        <file alias="ZoomLevelForward.svg">icons/ZoomLevelForward.svg</file>
+    </qresource>
+</RCC>

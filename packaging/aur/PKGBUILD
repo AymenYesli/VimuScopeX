@@ -1,0 +1,51 @@
+# Maintainer: Mohamed <your-email@example.com>
+#
+# AUR package "vimuscopex-bin" (yay -S vimuscopex-bin): the released AppImage,
+# unpacked at install time — no compiling, no FUSE — with a menu entry, icons
+# and the udev rule for the scope.
+#
+# On each release: set pkgver, run `updpkgsums` and
+# `makepkg --printsrcinfo > .SRCINFO`, then commit both to the AUR repo.
+
+pkgname=vimuscopex-bin
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Oscilloscope, recorder and automotive diagnostics for Vimu MSO scopes"
+arch=('x86_64')
+url="https://github.com/yourname/VimuScopeX"
+license=('GPL-3.0-or-later')      # settle before publishing (see packaging/README.md)
+depends=('glibc' 'hicolor-icon-theme')
+provides=('vimuscopex')
+conflicts=('vimuscopex')
+options=('!strip' '!debug')
+_appimage="VimuScopeX-${pkgver}-x86_64.AppImage"
+source=("${_appimage}::${url}/releases/download/v${pkgver}/${_appimage}")
+noextract=("${_appimage}")
+sha256sums=('SKIP')               # updpkgsums fills this in
+
+prepare() {
+    chmod +x "${_appimage}"
+    rm -rf squashfs-root
+    "./${_appimage}" --appimage-extract >/dev/null
+}
+
+package() {
+    install -d "$pkgdir/opt/vimuscopex"
+    cp -a squashfs-root/. "$pkgdir/opt/vimuscopex/"
+    find "$pkgdir/opt/vimuscopex" -type d -exec chmod 755 {} +
+
+    install -d "$pkgdir/usr/bin"
+    ln -s /opt/vimuscopex/AppRun "$pkgdir/usr/bin/vimuscopex"
+
+    install -Dm644 squashfs-root/usr/share/applications/vimuscopex.desktop \
+        "$pkgdir/usr/share/applications/vimuscopex.desktop"
+    sed -i 's/^Exec=VimuScopeX/Exec=vimuscopex/' "$pkgdir/usr/share/applications/vimuscopex.desktop"
+    local icon
+    for icon in squashfs-root/usr/share/icons/hicolor/*/apps/vimuscopex.png; do
+        install -Dm644 "$icon" "$pkgdir/usr/share/icons/hicolor/$(basename "$(dirname "$(dirname "$icon")")")/apps/vimuscopex.png"
+    done
+    install -Dm644 squashfs-root/usr/lib/udev/rules.d/60-vimuscope.rules \
+        "$pkgdir/usr/lib/udev/rules.d/60-vimuscope.rules"
+    install -Dm644 squashfs-root/usr/share/licenses/vimuscopex/VmMsoSDK-LICENSE.txt \
+        "$pkgdir/usr/share/licenses/$pkgname/VmMsoSDK-LICENSE.txt"
+}

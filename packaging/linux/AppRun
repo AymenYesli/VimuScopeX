@@ -1,0 +1,7 @@
+#!/bin/sh
+# VimuScope X AppImage entry point: the protocol decoders' Python is the one
+# bundled in the image, whatever the host has (or hasn't) installed.
+HERE="$(dirname "$(readlink -f "$0")")"
+export PYTHONHOME="$HERE/usr"
+export PYTHONDONTWRITEBYTECODE=1
+exec "$HERE/usr/bin/VimuScopeX" "$@"

@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e12">
+<title>VimuScope X Remote</title>
+<style>
+  :root { --bg:#0b0e12; --plot:#06080b; --text:#dce2e8; --muted:#8b96a1; --accent:#73ff00; --warn:#ff4646; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+               font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; overflow:hidden;
+               -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  .toggle { background:transparent; min-width:3.2em; font-size:.85em; font-weight:600; color:var(--muted);
+            border-radius:0; text-decoration:line-through; }
+  .toggle.on { text-decoration:none; }
+  #app { display:flex; flex-direction:column; height:100%;
+         padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  #status { display:flex; gap:.5em; align-items:center; padding:.35em .6em; font-size:.82em; }
+  #status .info { display:flex; gap:.5em; align-items:center; white-space:nowrap; overflow-x:auto; flex:1; min-width:0; }
+  .chip { padding:.15em .55em; border-radius:999px; background:#1a2027; color:var(--muted); }
+  .chip.live { background:#1f3a0c; color:var(--accent); }
+  .chip.off { background:#3a1414; color:var(--warn); }
+  #plotWrap { flex:1; position:relative; min-height:0; margin:0 .4em; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; border-radius:8px; background:var(--plot);
+           touch-action:none; }
+  #controls { display:flex; flex-wrap:wrap; gap:.4em; padding:.45em; justify-content:center; }
+  .group { display:flex; align-items:stretch; background:#151a20; border-radius:10px; overflow:hidden; }
+  .group span { padding:0 .55em; display:flex; align-items:center; color:var(--muted); font-size:.8em; }
+  button { border:0; background:#1f262e; color:var(--text); font-size:1.05em; min-width:2.8em; min-height:2.5em;
+           padding:0 .75em; cursor:pointer; font-family:inherit; border-radius:10px; }
+  .group button { border-radius:0; }
+  button:active { background:#2c3640; }
+  button.primary { background:var(--accent); color:#10180a; font-weight:600; min-width:5.2em; }
+  button.primary.stopped { background:#1f262e; color:var(--accent); }
+  #full { min-height:1.9em; min-width:2.4em; font-size:.95em; padding:0 .5em; }
+  #overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+             color:var(--muted); font-size:1.1em; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="status">
+    <div class="info">
+      <span class="chip off" id="conn">connecting</span>
+      <span class="chip" id="mode">&ndash;</span>
+      <span class="chip" id="state">&ndash;</span>
+      <span id="scales"></span>
+    </div>
+    <button id="full" title="Full screen">&#x26F6;</button>
+  </div>
+  <div id="plotWrap"><canvas id="plot"></canvas><div id="overlay">Connecting to VimuScope X&hellip;</div></div>
+  <div id="controls">
+    <button class="primary" id="run" data-cmd='{"cmd":"runstop"}'>Run</button>
+    <button data-cmd='{"cmd":"single"}'>Single</button>
+    <div class="group"><button data-cmd='{"cmd":"timebase","step":-1}'>&minus;</button><span>Time</span><button data-cmd='{"cmd":"timebase","step":1}'>+</button></div>
+    <div class="group"><button data-cmd='{"cmd":"scale","ch":0,"step":-1}'>&minus;</button><button class="toggle" id="tog0" data-ch="0">CH1</button><button data-cmd='{"cmd":"scale","ch":0,"step":1}'>+</button></div>
+    <div class="group"><button data-cmd='{"cmd":"scale","ch":1,"step":-1}'>&minus;</button><button class="toggle" id="tog1" data-ch="1">CH2</button><button data-cmd='{"cmd":"scale","ch":1,"step":1}'>+</button></div>
+    <div class="group"><button data-cmd='{"cmd":"trigger","step":-1}'>&minus;</button><span>Trig</span><button data-cmd='{"cmd":"trigger","step":1}'>+</button></div>
+  </div>
+</div>
+<script>
+"use strict";
+const key = new URLSearchParams(location.search).get("k") || "";
+const canvas = document.getElementById("plot");
+const ctx = canvas.getContext("2d");
+let ws = null, frame = null, connected = false;
+let geom = null;   // plot geometry of the last render, for dragging
+
+function eng(v, unit) {
+  if (!isFinite(v)) return "\u2013";
+  const a = Math.abs(v);
+  if (a < 1e-15) return "0 " + unit;
+  const units = [[1e9,"G"],[1e6,"M"],[1e3,"k"],[1,""],[1e-3,"m"],[1e-6,"\u00b5"],[1e-9,"n"]];
+  for (const [f, p] of units) if (a >= f * 0.9999 || f === 1e-9) {
+    const x = v / f;
+    return (Math.abs(x) >= 100 ? x.toFixed(0) : Math.abs(x) >= 10 ? x.toFixed(1) : x.toFixed(2)) + " " + p + unit;
+  }
+  return v + " " + unit;
+}
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws?k=${encodeURIComponent(key)}`);
+  ws.onopen = () => { connected = true; setConn(); };
+  ws.onmessage = (e) => {
+    try { frame = JSON.parse(e.data); } catch (_) { return; }
+    // Drag moves the computer has applied no longer need previewing.
+    sentDrags = sentDrags.filter((d) => d.seq > (frame.seq || 0));
+    render();
+  };
+  ws.onclose = () => { connected = false; setConn(); setTimeout(connect, 1500); };
+  ws.onerror = () => { try { ws.close(); } catch (_) {} };
+}
+function setConn() {
+  const c = document.getElementById("conn");
+  c.textContent = connected ? "connected" : "reconnecting";
+  c.className = "chip " + (connected ? "live" : "off");
+  const o = document.getElementById("overlay");
+  o.style.display = connected && frame ? "none" : "flex";
+  if (!connected) o.textContent = "Reconnecting to VimuScope X\u2026";
+}
+function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+document.querySelectorAll("button[data-cmd]").forEach((b) =>
+  b.addEventListener("click", () => send(JSON.parse(b.dataset.cmd))));
+document.getElementById("full").addEventListener("click", () => {
+  const d = document.documentElement;
+  if (!document.fullscreenElement) (d.requestFullscreen || d.webkitRequestFullscreen || (() => {})).call(d);
+  else (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+});
+document.querySelectorAll("button.toggle").forEach((b) =>
+  b.addEventListener("click", () => send({ cmd: "channel", ch: +b.dataset.ch })));
+
+// --- Dragging a trace up or down (as on the computer) ----------------------
+// Traces are "c0", "c1" (channels, by index in frame.channels) and "m" (Math).
+// A press in a trace's gutter grabs it anywhere along the scale — even when
+// the trace itself is dragged off-screen; in the plot, the nearest trace.
+let drag = null;          // { id, pendingPx, lastY }
+let sentDrags = [];       // { id, px, seq } sent, not yet seen applied
+let seq = Date.now();
+function previewPx(id) {
+  let px = 0;
+  for (const d of sentDrags) if (d.id === id) px += d.px;
+  if (drag && drag.id === id) px += drag.pendingPx;
+  return px;
+}
+function traceById(id) {
+  if (!frame) return null;
+  if (id === "m") return frame.math || null;
+  return (frame.channels || [])[+id.slice(1)] || null;
+}
+function traceYAt(id, x) {
+  const t = traceById(id), g = geom;
+  if (!t) return null;
+  const n = t.min.length;
+  const col = Math.max(0, Math.min(n - 1, Math.floor((x - g.l) / g.pw * n)));
+  if (t.min[col] === null) return null;
+  return g.cy - (t.min[col] + t.max[col]) / 200 * g.ppd + previewPx(id);
+}
+// A press in the plot decides what it is once it has moved a few pixels:
+// mostly sideways pans through time (all modes, like dragging the plot on
+// the computer); mostly up / down moves the trace under the finger. A press
+// in a gutter always moves that gutter's trace.
+let press = null;     // { x, y, candidate, inGutter } until decided
+let pan = null;       // { lastX, pendingPx } while panning
+canvas.addEventListener("pointerdown", (e) => {
+  if (!frame || !geom) return;
+  const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  let id = null, inGutter = false;
+  for (const gt of geom.gutters) if (x >= gt.x0 && x < gt.x1) { id = gt.id; inGutter = true; }
+  if (id === null && x >= geom.l && x <= geom.l + geom.pw) {
+    let bestDist = 40;
+    const ids = (frame.channels || []).map((_, i) => "c" + i);
+    if (frame.math) ids.push("m");
+    for (const cand of ids) {
+      const ty = traceYAt(cand, x);
+      if (ty !== null && Math.abs(ty - y) < bestDist) { bestDist = Math.abs(ty - y); id = cand; }
+    }
+  }
+  if (inGutter) {
+    drag = { id, pendingPx: 0, lastY: e.clientY };
+  } else if (x >= geom.l && x <= geom.l + geom.pw) {
+    press = { x: e.clientX, y: e.clientY, candidate: id };
+  } else {
+    return;
+  }
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (press) {
+    const dx = e.clientX - press.x, dy = e.clientY - press.y;
+    if (Math.hypot(dx, dy) < 8) return;              // not decided yet
+    if (Math.abs(dx) > Math.abs(dy)) {
+      pan = { lastX: press.x, pendingPx: 0 };
+    } else if (press.candidate !== null) {
+      drag = { id: press.candidate, pendingPx: 0, lastY: press.y };
+    }
+    press = null;
+  }
+  if (pan) {
+    pan.pendingPx += e.clientX - pan.lastX;
+    pan.lastX = e.clientX;
+    return;
+  }
+  if (!drag) return;
+  drag.pendingPx += e.clientY - drag.lastY;
+  drag.lastY = e.clientY;
+  render();
+});
+function flushPan() {
+  if (!pan || !geom || pan.pendingPx === 0) return;
+  send({ cmd: "pan", fraction: pan.pendingPx / geom.pw });
+  pan.pendingPx = 0;
+}
+setInterval(flushPan, 40);
+const endDrag = () => {
+  press = null;
+  if (pan) { flushPan(); pan = null; }
+  if (drag) { flushDrag(); drag = null; }
+};
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+function flushDrag() {
+  if (!drag || !frame || !geom || drag.pendingPx === 0) return;
+  const t = traceById(drag.id);
+  if (!t || !(t.perDiv > 0)) return;
+  const volts = -drag.pendingPx / geom.ppd * t.perDiv;
+  seq += 1;
+  if (drag.id === "m") send({ cmd: "mathPosition", volts, seq });
+  else send({ cmd: "position", ch: t.n - 1, volts, seq });
+  sentDrags.push({ id: drag.id, px: drag.pendingPx, seq });
+  drag.pendingPx = 0;
+}
+setInterval(flushDrag, 40);
+
+// --- Drawing -----------------------------------------------------------------
+function drawTrace(t, colour, g, offsetPx) {
+  const n = t.min.length, colW = g.pw / n;
+  ctx.strokeStyle = colour; ctx.lineWidth = 1.4; ctx.lineJoin = "round";
+  ctx.beginPath();
+  let prev = null;
+  for (let i = 0; i < n; i++) {
+    if (t.min[i] === null) { prev = null; continue; }
+    const x = g.l + (i + .5) * colW;
+    const yHi = g.cy - t.max[i] / 100 * g.ppd + offsetPx, yLo = g.cy - t.min[i] / 100 * g.ppd + offsetPx;
+    if (prev === null) ctx.moveTo(x, yHi);
+    else ctx.lineTo(x, Math.abs(prev - yHi) < Math.abs(prev - yLo) ? yHi : yLo);
+    ctx.lineTo(x, yHi); ctx.lineTo(x, yLo);
+    prev = yLo;
+  }
+  ctx.stroke();
+}
+function drawScale(t, colour, g, gutter, offsetPx) {
+  ctx.fillStyle = colour; ctx.font = "10px system-ui, sans-serif"; ctx.textBaseline = "middle";
+  ctx.textAlign = gutter.right ? "left" : "right";
+  const unit = t.unit || "V";
+  const x = gutter.right ? gutter.x0 + 3 : gutter.x1 - 3;
+  for (let i = 0; i <= g.vd; i++) {
+    const y = Math.min(Math.max(g.t + g.ph * i / g.vd, g.t + 5), g.t + g.ph - 5);
+    // The value at this line, shifted by any drag still being previewed.
+    const v = t.centre + ((g.vd / 2 - i) + offsetPx / g.ppd) * t.perDiv;
+    ctx.fillText(eng(v, unit).replace(" ", ""), x, y);
+  }
+  // Where the trace's zero is, as on the computer: a marker on the gutter.
+  const zeroDiv = -t.centre / t.perDiv - offsetPx / g.ppd;
+  if (Math.abs(zeroDiv) <= g.vd / 2) {
+    const y0 = g.cy - zeroDiv * g.ppd;
+    ctx.beginPath();
+    if (gutter.right) { ctx.moveTo(gutter.x0, y0); ctx.lineTo(gutter.x0 + 6, y0 - 4); ctx.lineTo(gutter.x0 + 6, y0 + 4); }
+    else { ctx.moveTo(gutter.x1, y0); ctx.lineTo(gutter.x1 - 6, y0 - 4); ctx.lineTo(gutter.x1 - 6, y0 + 4); }
+    ctx.fill();
+  }
+}
+function drawBus(rows, g) {
+  const rowH = 18;
+  ctx.font = "10px system-ui, sans-serif"; ctx.textBaseline = "middle";
+  rows.forEach((row, idx) => {
+    const top = g.t + g.ph - (rows.length - idx) * (rowH + 2) - 2;
+    ctx.fillStyle = "rgba(6,8,11,.85)"; ctx.fillRect(g.l, top, g.pw, rowH);
+    const tagW = ctx.measureText(row.label).width + 10;
+    const left = g.l + tagW + 6;
+    ctx.save(); ctx.beginPath(); ctx.rect(left, top, g.l + g.pw - left, rowH); ctx.clip();
+    if (row.message) {
+      ctx.fillStyle = "#8b96a1"; ctx.textAlign = "center";
+      ctx.fillText(row.message, (left + g.l + g.pw) / 2, top + rowH / 2);
+    } else {
+      for (const a of row.ann) {
+        const x0 = Math.max(left, g.l + a.a * g.pw), x1 = Math.min(g.l + g.pw, g.l + a.b * g.pw);
+        if (x1 - x0 < 3) { ctx.fillStyle = a.e ? "#ff4646" : row.color; ctx.fillRect(x0, top + 3, 1, rowH - 6); continue; }
+        ctx.strokeStyle = a.e ? "#ff4646" : row.color;
+        ctx.fillStyle = (a.e ? "#ff4646" : row.color) + "40";
+        ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x0, top + 2, x1 - x0, rowH - 4, 3) : ctx.rect(x0, top + 2, x1 - x0, rowH - 4);
+        ctx.fill(); ctx.stroke();
+        for (const text of a.t) {
+          if (ctx.measureText(text).width <= x1 - x0 - 6) {
+            ctx.fillStyle = "#dce2e8"; ctx.textAlign = "center";
+            ctx.fillText(text, (x0 + x1) / 2, top + rowH / 2); break;
+          }
+        }
+      }
+    }
+    ctx.restore();
+    ctx.fillStyle = row.color;
+    ctx.fillRect(g.l + 2, top + 2, tagW, rowH - 4);
+    ctx.fillStyle = "#10180a"; ctx.textAlign = "center";
+    ctx.fillText(row.label, g.l + 2 + tagW / 2, top + rowH / 2);
+  });
+}
+
+function render() {
+  if (!frame) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const hd = frame.hdiv, vd = frame.vdiv;
+  const chans = frame.channels || [];
+  // Gutters as on the computer: CH1 left, CH2 right; Math takes the side of
+  // a channel that's off, else an extra column on the left (left first).
+  const on = (n) => chans.find((c) => c.n === n);
+  const left = [], right = [];
+  if (on(1)) left.push({ id: "c" + chans.indexOf(on(1)), t: on(1) });
+  if (on(2)) right.push({ id: "c" + chans.indexOf(on(2)), t: on(2) });
+  for (const c of chans) if (c.n > 2) (left.length <= right.length ? left : right).push({ id: "c" + chans.indexOf(c), t: c });
+  if (frame.math) {
+    const m = { id: "m", t: frame.math };
+    if (!on(1)) left.push(m); else if (!on(2)) right.push(m); else left.push(m);
+  }
+  const GW = 46;
+  const pad = { l: left.length * GW + (left.length ? 0 : 8), r: right.length * GW + (right.length ? 0 : 8), t: 8, b: 22 };
+  const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+  const gutters = [];
+  left.forEach((s, i) => gutters.push({ ...s, right: false, x0: pad.l - (i + 1) * GW, x1: pad.l - i * GW }));
+  right.forEach((s, i) => gutters.push({ ...s, right: true, x0: w - pad.r + i * GW, x1: w - pad.r + (i + 1) * GW }));
+  const g = geom = { l: pad.l, t: pad.t, pw, ph, ppd: ph / vd, cy: pad.t + ph / 2, vd, gutters };
+
+  // Grid.
+  ctx.strokeStyle = "#1e252d"; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 1; i < hd; i++) { const x = pad.l + pw * i / hd; ctx.moveTo(x, pad.t); ctx.lineTo(x, pad.t + ph); }
+  for (let i = 1; i < vd; i++) { const y = pad.t + ph * i / vd; ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + pw, y); }
+  ctx.stroke();
+  ctx.strokeStyle = "#394450"; ctx.strokeRect(pad.l + .5, pad.t + .5, pw - 1, ph - 1);
+
+  // Voltage scales, one per gutter; then time.
+  for (const gt of gutters) drawScale(gt.t, gt.t.color, g, gt, previewPx(gt.id));
+  ctx.fillStyle = "#8b96a1"; ctx.font = "11px system-ui, sans-serif"; ctx.textBaseline = "top";
+  for (let i = 0; i <= hd; i += 2) {
+    const x = pad.l + pw * i / hd;
+    ctx.textAlign = i === 0 ? "left" : i === hd ? "right" : "center";
+    ctx.fillText(eng(frame.leftTime + i * frame.perDiv, "s"), x, pad.t + ph + 4);
+  }
+
+  // Traces.
+  ctx.save();
+  ctx.beginPath(); ctx.rect(pad.l, pad.t, pw, ph); ctx.clip();
+  chans.forEach((ch, i) => drawTrace(ch, ch.color, g, previewPx("c" + i)));
+  if (frame.math) drawTrace(frame.math, frame.math.color, g, previewPx("m"));
+  if (frame.bus && frame.bus.length) drawBus(frame.bus, g);
+
+  // Readouts, top left.
+  ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.font = "12px system-ui, sans-serif";
+  let y = pad.t + 6;
+  for (const r of frame.readouts) {
+    const tw = ctx.measureText(r.text).width;
+    ctx.fillStyle = "rgba(6,8,11,.75)"; ctx.fillRect(pad.l + 4, y - 2, tw + 10, 17);
+    ctx.fillStyle = r.color; ctx.fillText(r.text, pad.l + 9, y);
+    y += 19;
+  }
+  // Result panels, top right.
+  let py = pad.t + 6;
+  for (const p of frame.panels) {
+    const lines = [p.title, ...p.lines];
+    let pwid = 0; for (const l of lines) pwid = Math.max(pwid, ctx.measureText(l).width);
+    pwid = Math.min(pwid + 16, pw * 0.6);
+    const pht = lines.length * 16 + 8;
+    if (py + pht > pad.t + ph) break;
+    const px = pad.l + pw - pwid - 6;
+    ctx.fillStyle = "rgba(6,8,11,.85)"; ctx.fillRect(px, py, pwid, pht);
+    ctx.strokeStyle = "#394450"; ctx.strokeRect(px + .5, py + .5, pwid - 1, pht - 1);
+    lines.forEach((l, i) => {
+      ctx.fillStyle = i === 0 ? "#dce2e8" : (p.warn[i - 1] ? "#ff4646" : "#8b96a1");
+      ctx.fillText(l, px + 8, py + 4 + i * 16, pwid - 16);
+    });
+    py += pht + 6;
+  }
+  ctx.restore();
+
+  // Status line.
+  document.getElementById("mode").textContent = frame.mode || "\u2013";
+  const st = document.getElementById("state");
+  st.textContent = frame.state || "\u2013";
+  st.className = "chip" + (frame.state === "Running" ? " live" : "");
+  const run = document.getElementById("run");
+  run.textContent = frame.state === "Running" ? "Stop" : "Run";
+  run.classList.toggle("stopped", frame.state !== "Running");
+  let scales = eng(frame.perDiv, "s") + "/div";
+  for (const ch of chans) scales += `  \u00b7  CH${ch.n} ${eng(ch.perDiv, ch.unit)}/div`;
+  document.getElementById("scales").textContent = scales;
+  for (const c of frame.allChannels || []) {
+    const b = document.getElementById("tog" + (c.n - 1));
+    if (!b) continue;
+    b.classList.toggle("on", c.on);
+    b.style.color = c.on ? c.color : "";
+  }
+  document.getElementById("overlay").style.display = "none";
+}
+
+window.addEventListener("resize", render);
+connect();
+</script>
+</body>
+</html>

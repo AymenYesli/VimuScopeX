@@ -1,0 +1,74 @@
+# Builds the Windows installer and the Linux AppImage on every version tag
+# (git tag v1.0.0 && git push origin v1.0.0) and publishes them as a GitHub
+# Release — the files winget and the AUR package download.
+#
+# Needs nothing else: CMake fetches Vimu's SDK (MIT) from github.com/vimu-tech/VmMsoSDK.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: unzip curl
+      - name: Build, bundle and make the installer
+        run: ./packaging/windows/build-windows.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/VimuScopeX-*-setup.exe
+            dist/VimuScopeX-windows.zip
+
+  linux:
+    # An older LTS for the AppImage's reach (glibc), with a current Qt.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          modules: 'qtmultimedia'
+          cache: true
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config libfftw3-dev libsigrokdecode-dev python3 \
+              libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0 libfuse2 file
+      - name: Build the AppImage
+        run: ./packaging/linux/build-appimage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/VimuScopeX-*-x86_64.AppImage
+
+  release:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Checksums
+        run: cd artifacts && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

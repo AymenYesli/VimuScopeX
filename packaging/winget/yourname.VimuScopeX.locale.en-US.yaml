@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: yourname.VimuScopeX
+PackageVersion: 1.0.0
+PackageLocale: en-US
+Publisher: yourname
+PackageName: VimuScope X
+License: GPL-3.0-or-later
+ShortDescription: Oscilloscope, recorder and automotive diagnostics for Vimu MSO scopes.
+Description: PicoScope-style software for Vimu MSO USB oscilloscopes — capture, live streaming and disk recording, protocol decoding (CAN, LIN, K-Line, SENT, OBD-II/UDS) and automotive tests.
+Tags:
+  - oscilloscope
+  - automotive
+  - can-bus
+  - electronics
+PackageUrl: https://github.com/yourname/VimuScopeX
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: yourname.VimuScopeX
+PackageVersion: 1.0.0
+InstallerType: nullsoft            # NSIS: winget installs it silently (/S)
+Scope: machine
+UpgradeBehavior: install
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/yourname/VimuScopeX/releases/download/v1.0.0/VimuScopeX-1.0.0-setup.exe
+    InstallerSha256: FILL_IN_FROM_SHA256SUMS_TXT
+ManifestType: installer
+ManifestVersion: 1.6.0

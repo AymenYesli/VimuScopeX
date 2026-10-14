@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=VimuScope X
+GenericName=Oscilloscope
+Comment=Oscilloscope, recorder and automotive diagnostics for Vimu MSO scopes
+Exec=VimuScopeX %f
+Icon=vimuscopex
+Terminal=false
+Categories=Science;Electronics;Engineering;
+Keywords=oscilloscope;scope;automotive;CAN;LIN;SENT;OBD;

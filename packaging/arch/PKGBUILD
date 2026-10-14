@@ -1,0 +1,57 @@
+# VimuScope X - native Arch Linux package, built from this source tree.
+#
+#     cd packaging/arch
+#     makepkg -si          (VIMU_SDK=/path/to/VmMsoSDK-master to use a local SDK)
+#
+# Installs to /opt/vimuscopex (the app, our K-Line decoder and the Vimu SDK
+# library side by side), a "vimuscopex" command, a menu entry, icons, and the
+# udev rule that lets your user account use the scope (replug it after).
+# Uses the system's Qt 6, libsigrokdecode (with its decoders) and Python.
+
+pkgname=vimuscopex
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Oscilloscope, recorder and automotive diagnostics for Vimu MSO scopes"
+arch=('x86_64')
+url="https://github.com/"
+license=('custom')
+depends=('qt6-base' 'qt6-multimedia' 'qt6-svg' 'fftw' 'libsigrokdecode' 'python' 'hicolor-icon-theme')
+makedepends=('cmake' 'ninja' 'patchelf')
+options=('!debug')
+source=()
+
+
+# This source tree: two levels above the PKGBUILD (makepkg's $startdir).
+_tree() { cd "$startdir/../.." && pwd; }
+
+build() {
+    cmake -S "$(_tree)" -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ${VIMU_SDK:+-DVIMU_SDK_DIR="$VIMU_SDK"}
+    cmake --build build
+}
+
+package() {
+    local opt="$pkgdir/opt/vimuscopex" tree
+    tree="$(_tree)"
+    install -Dm755 build/VimuScopeX "$opt/VimuScopeX"
+    cp -r build/decoders "$opt/decoders"
+
+    local sdklib sdk="${VIMU_SDK:-$srcdir/build/_deps/vimusdk-src}"
+    sdklib="$(find "$sdk" -name 'libvmmultmso.so' -path '*x*64*' | head -n 1)"
+    [ -n "$sdklib" ] || sdklib="$(find "$sdk" -name 'libvmmultmso.so' | head -n 1)"
+    [ -n "$sdklib" ] || { echo "libvmmultmso.so not found under $sdk"; return 1; }
+    cp -a "$(dirname "$sdklib")"/lib*.so* "$opt/"
+    patchelf --set-rpath '$ORIGIN' "$opt/VimuScopeX"
+
+    install -d "$pkgdir/usr/bin"
+    ln -s /opt/vimuscopex/VimuScopeX "$pkgdir/usr/bin/vimuscopex"
+
+    install -Dm644 "$tree/packaging/linux/vimuscopex.desktop" "$pkgdir/usr/share/applications/vimuscopex.desktop"
+    sed -i 's/^Exec=VimuScopeX/Exec=vimuscopex/' "$pkgdir/usr/share/applications/vimuscopex.desktop"
+    local size
+    for size in 16 32 48 64 128 256 512; do
+        [ -f "$tree/resources/app/app-icon-$size.png" ] && install -Dm644 "$tree/resources/app/app-icon-$size.png" \
+            "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/vimuscopex.png"
+    done
+    install -Dm644 "$tree/licenses/VmMsoSDK-LICENSE.txt" "$pkgdir/usr/share/licenses/$pkgname/VmMsoSDK-LICENSE.txt"
+    install -Dm644 "$tree/packaging/linux/60-vimuscope.rules" "$pkgdir/usr/lib/udev/rules.d/60-vimuscope.rules"
+}

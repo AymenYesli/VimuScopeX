@@ -1,3 +1,8 @@
+**Windows:** download `VimuScopeX-…-setup.exe` from [Releases](https://github.com/yourname/VimuScopeX/releases/latest)
+
+**Linux (any distribution):**
+    curl -fsSL https://raw.githubusercontent.com/yourname/VimuScopeX/main/install.sh | sh
+    
 # VimuScope X — Linux (Arch) build
 
 A Qt 6 frontend for Vimu MSO USB scopes, built on the vendor's public

@@ -51,10 +51,14 @@ rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib"
 install -m 755 "$BUILD/build/VimuScopeX" "$APPDIR/usr/bin/"
 
-# The Vimu SDK library and its sibling (libvmsignal.so).
-SDKLIB="$(find "$SDK" -name 'libvmmultmso.so' -path '*x*64*' 2>/dev/null | head -n 1)"
-[ -n "$SDKLIB" ] || SDKLIB="$(find "$SDK" -name 'libvmmultmso.so' 2>/dev/null | head -n 1)"
-[ -n "$SDKLIB" ] || die "libvmmultmso.so not found under $SDK"
+# The Vimu SDK library and its siblings (libvmsignal.so ...). The SDK ships
+# Linux builds for PCs and for Raspberry Pis: the x86-64 one is picked by
+# what the file *is* (a folder-name guess like *x*64* also matched arm64).
+SDKLIB=""
+while IFS= read -r candidate; do
+    if file -L "$candidate" | grep -q 'x86-64'; then SDKLIB="$candidate"; break; fi
+done < <(find "$SDK" -name 'libvmmultmso.so' 2>/dev/null)
+[ -n "$SDKLIB" ] || die "No x86-64 libvmmultmso.so found under $SDK"
 cp -a "$(dirname "$SDKLIB")"/lib*.so* "$APPDIR/usr/lib/"
 VENDOR_LIBS=()
 for lib in "$APPDIR"/usr/lib/lib*.so; do VENDOR_LIBS+=(--library "$lib"); done
@@ -75,13 +79,25 @@ else
 fi
 [ -d "$BUILD/build/decoders" ] && cp -r "$BUILD/build/decoders/." "$APPDIR/usr/bin/decoders/"
 
-# The Python the decoders run on: its standard library (AppRun points
+# The Python the decoders run on: the one libsigrokdecode is linked against
+# (not whichever `python3` comes first on PATH — CI's Qt setup installs its
+# own, newer one), its standard library from the system (AppRun points
 # PYTHONHOME at it); libpython itself comes with libsigrokdecode below.
-PYVER="$(python3 -c 'import sys; print("python%d.%d" % sys.version_info[:2])')"
-PYLIB="$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["stdlib"])')"
+PYVER="$(ldd "$BUILD/build/VimuScopeX" | grep -o 'libpython3\.[0-9]*' | head -n 1 | sed 's/^lib//')"
+if [ -n "$PYVER" ] && [ -d "/usr/lib/$PYVER" ]; then
+    PYLIB="/usr/lib/$PYVER"
+else
+    PYVER="$(python3 -c 'import sys; print("python%d.%d" % sys.version_info[:2])')"
+    PYLIB="$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["stdlib"])')"
+fi
+echo "Bundling $PYVER from $PYLIB"
 mkdir -p "$APPDIR/usr/lib/$PYVER"
+# Not: tests, IDLE, Tk (and _tkinter, which pulls in Tcl/Tk), the build
+# configuration (config-*: a static python.o that tools choke on), packages.
 ( cd "$PYLIB" && tar --exclude='./test' --exclude='./idlelib' --exclude='./tkinter' --exclude='./turtledemo' \
-      --exclude='./site-packages' --exclude='./dist-packages' --exclude='__pycache__' -cf - . ) \
+      --exclude='./config-*' --exclude='./lib-dynload/_tkinter*' --exclude='./lib-dynload/_test*' \
+      --exclude='./lib-dynload/xxlimited*' --exclude='./site-packages' --exclude='./dist-packages' \
+      --exclude='__pycache__' -cf - . ) \
     | tar -xf - -C "$APPDIR/usr/lib/$PYVER"
 
 # Desktop entry, icons, udev rule (for reference: an AppImage can't install it).

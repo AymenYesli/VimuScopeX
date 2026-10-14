@@ -16,7 +16,7 @@ arch=('x86_64')
 url="https://github.com/"
 license=('custom')
 depends=('qt6-base' 'qt6-multimedia' 'qt6-svg' 'fftw' 'libsigrokdecode' 'python' 'hicolor-icon-theme')
-makedepends=('cmake' 'ninja' 'patchelf')
+makedepends=('cmake' 'ninja' 'patchelf' 'file')
 options=('!debug')
 source=()
 
@@ -36,9 +36,12 @@ package() {
     cp -r build/decoders "$opt/decoders"
 
     local sdklib sdk="${VIMU_SDK:-$srcdir/build/_deps/vimusdk-src}"
-    sdklib="$(find "$sdk" -name 'libvmmultmso.so' -path '*x*64*' | head -n 1)"
-    [ -n "$sdklib" ] || sdklib="$(find "$sdk" -name 'libvmmultmso.so' | head -n 1)"
-    [ -n "$sdklib" ] || { echo "libvmmultmso.so not found under $sdk"; return 1; }
+    # The x86-64 build (the SDK also ships Raspberry Pi ones), by what the file is.
+    local candidate
+    while IFS= read -r candidate; do
+        if file -L "$candidate" | grep -q 'x86-64'; then sdklib="$candidate"; break; fi
+    done < <(find "$sdk" -name 'libvmmultmso.so')
+    [ -n "$sdklib" ] || { echo "No x86-64 libvmmultmso.so found under $sdk"; return 1; }
     cp -a "$(dirname "$sdklib")"/lib*.so* "$opt/"
     patchelf --set-rpath '$ORIGIN' "$opt/VimuScopeX"
 
